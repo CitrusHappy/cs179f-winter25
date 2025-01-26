@@ -12,3 +12,4 @@
 #define FSSIZE       1000  // size of file system in blocks
 #define MAXPATH      128   // maximum file path name
 #define NDISK        2
+#define MAX_LINE     1024 // Maximum length of a line
