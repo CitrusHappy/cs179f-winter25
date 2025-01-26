@@ -23,7 +23,7 @@ void find(char *path, char *target) {
 
     // Ensure it's a directory before proceeding
     if (stats.type != T_DIR) {
-        fprintf(2, "find: %s is not a directory\n", path);
+        fprintf(2, "ERROR: find: %s is not a directory\n", path);
         close(file_descriptor);
         return;
     }
@@ -36,7 +36,7 @@ void find(char *path, char *target) {
     strcpy(buffer, path); // copy path to buffer
     p = buffer + strlen(buffer); // sets pointer p to the end of the string in buffer, p is buffer now
     *p++ = '/'; // add slash at end of p and increment pointer
-    printf("DEBUG: Found a directory - %s\n", buffer);
+    //printf("DEBUG: Found a directory - %s\n", buffer);
 
     // iterate through all files in directory
     // - each read() steps through the directory entries, returning the next one
@@ -49,17 +49,17 @@ void find(char *path, char *target) {
         
         memmove(p, directory_entry.name, DIRSIZ); // adds the current directory_entry.name to the end of the buffer
         p[DIRSIZ] = 0; // null terminate the buffer so it prints properly
-        printf("DEBUG: buf = %s\n", buffer);
+        //printf("DEBUG: buf = %s\n", buffer);
 
         // Get the status of the current entry
         if (stat(buffer, &stats) < 0) {
-            fprintf(2, "find: cannot stat %s\n", buffer);
+            fprintf(2, "ERROR: find: cannot stat %s\n", buffer);
             continue;
         }
 
-        printf("DEBUG: %s matches %s?\n", directory_entry.name, target);
+        //printf("DEBUG: %s matches %s?\n", directory_entry.name, target);
         if(strcmp(directory_entry.name, target) == 0) { // check if file name matches target
-            printf("DEBUG: MATCHED\n");
+            //printf("DEBUG: MATCHED\n");
             printf("%s\n", buffer);
         }
 
