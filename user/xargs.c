@@ -64,7 +64,7 @@ int main(int argc, char *argv[]) {
     while (1) {
         char c;
         int bytes_read = read(0, &c, 1); // 0 for stdin
-        printf("%c\n", c);
+        //printf("DEBUG: %c\n", c);
         //printf("DEBUG: index before - %d\n", index);
         if (bytes_read <= 0) { // End of piped input or error
             //printf("DEBUG: End of piped input\n");
