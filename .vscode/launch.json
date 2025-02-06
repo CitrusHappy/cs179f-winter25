@@ -2,17 +2,17 @@
 {
     "version": "0.2.0",
     "configurations": [
-    {
-    "name": "xv6debug",
-    "type": "cppdbg",
-    "request": "launch",
-    "program": "${workspaceFolder}/user/_${program}",
-    "stopAtEntry": true,
-    "cwd": "${workspaceFolder}",
-    "miDebuggerServerAddress": "127.0.0.1:25000",
-    "miDebuggerPath": "/usr/bin/gdb-multiarch",
-    "MIMode": "gdb",
-    "preLaunchTask": "xv6build"
-    }
+        {
+            "name": "xv6debug",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/user/_${program}",
+            "stopAtEntry": true,
+            "cwd": "${workspaceFolder}",
+            "miDebuggerServerAddress": "127.0.0.1:25000",
+            "miDebuggerPath": "/usr/local/pkgs/riscv-gnu-toolchain/build-gdb-newlib/gdb/gdb",
+            "MIMode": "gdb",
+            "preLaunchTask": "xv6build"
+        }
     ]
 }

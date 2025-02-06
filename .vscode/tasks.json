@@ -6,7 +6,7 @@
             "label": "xv6build",
             "type": "shell",
             "isBackground": true,
-            "command": "source cs179f; make qemu-gdb",
+            "command": "make qemu-gdb",
             "problemMatcher": [
                 {
                     "pattern": [
