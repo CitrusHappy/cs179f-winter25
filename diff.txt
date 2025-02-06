@@ -1,0 +1,256 @@
+diff --git a/.gitignore b/.gitignore
+index fc565fa..3f27eb9 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -18,3 +18,4 @@ user/usys.S
+ myapi.key
+ *-handin.tar.gz
+ xv6.out*
++diff.txt
+diff --git a/.vscode/settings.json b/.vscode/settings.json
+new file mode 100644
+index 0000000..2ae8e31
+--- /dev/null
++++ b/.vscode/settings.json
+@@ -0,0 +1,10 @@
++{
++    "files.associations": {
++        "stat.h": "c",
++        "types.h": "c",
++        "user.h": "c",
++        "fs.h": "c",
++        "param.h": "c",
++        "proc.h": "c"
++    }
++}
+\ No newline at end of file
+diff --git a/Makefile b/Makefile
+index dcaa3dc..9d6cd06 100644
+--- a/Makefile
++++ b/Makefile
+@@ -140,6 +140,9 @@ UPROGS=\
+ 	$U/_bcachetest\
+ 	$U/_mounttest\
+ 	$U/_crashtest\
++	$U/_sleep\
++	$U/_find\
++	$U/_xargs\
+ 
+ fs.img: mkfs/mkfs README user/xargstest.sh $(UPROGS)
+ 	mkfs/mkfs fs.img README user/xargstest.sh $(UPROGS)
+diff --git a/kernel/param.h b/kernel/param.h
+index e5c864f..b6d2f96 100644
+--- a/kernel/param.h
++++ b/kernel/param.h
+@@ -12,3 +12,4 @@
+ #define FSSIZE       1000  // size of file system in blocks
+ #define MAXPATH      128   // maximum file path name
+ #define NDISK        2
++#define MAX_LINE     1024 // Maximum length of a line
+diff --git a/user/find.c b/user/find.c
+new file mode 100644
+index 0000000..a673662
+--- /dev/null
++++ b/user/find.c
+@@ -0,0 +1,80 @@
++#include "kernel/types.h"
++#include "kernel/stat.h"
++#include "user/user.h"
++#include "kernel/fs.h"
++
++void find(char *path, char *target) {
++    int file_descriptor; // an identifier # for a file/dir, so we can lookup it's directory_entry
++    struct stat stats; // file size, permissions, timestamps, file type, and inode number.
++    // inode number: unique id for the file, used by system to locate a file's metadata
++
++    // stores path as an int into file_descriptor 
++    if((file_descriptor = open(path, 0)) < 0) { // open 0 : read_only mode
++        fprintf(2, "ERROR: find: cannot open %s\n", path);
++        return;
++    }
++
++    // get stats from input (file_descriptor)
++    if(fstat(file_descriptor, &stats) < 0) { // fstat inputs a file_descriptor to return stats, stat inputs a path
++        fprintf(2, "ERROR: find: cannot stat %s\n", path);
++        close(file_descriptor);
++        return;
++    }
++
++    // Ensure it's a directory before proceeding
++    if (stats.type != T_DIR) {
++        fprintf(2, "ERROR: find: %s is not a directory\n", path);
++        close(file_descriptor);
++        return;
++    }
++
++    char buffer[512]; // buffer 
++    char *p; // allows us to manipulate the buffer
++    struct dirent directory_entry; // a directory entry from a table containing [inum (inode number), file name]
++
++    // add onto the buffer
++    strcpy(buffer, path); // copy path to buffer
++    p = buffer + strlen(buffer); // sets pointer p to the end of the string in buffer, p is buffer now
++    *p++ = '/'; // add slash at end of p and increment pointer
++    //printf("DEBUG: Found a directory - %s\n", buffer);
++
++    // iterate through all files in directory
++    // - each read() steps through the directory entries, returning the next one
++    while(read(file_descriptor, &directory_entry, sizeof(directory_entry)) == sizeof(directory_entry)) {
++        if(directory_entry.inum == 0 
++            || strcmp(directory_entry.name, ".") == 0 
++            || strcmp(directory_entry.name, "..") == 0
++            ) // skip empty files, ".", and ".."
++            continue;
++        
++        memmove(p, directory_entry.name, DIRSIZ); // adds the current directory_entry.name to the end of the buffer
++        p[DIRSIZ] = 0; // null terminate the buffer so it prints properly
++        //printf("DEBUG: buf = %s\n", buffer);
++
++        // Get the status of the current entry
++        if (stat(buffer, &stats) < 0) {
++            fprintf(2, "ERROR: find: cannot stat %s\n", buffer);
++            continue;
++        }
++
++        //printf("DEBUG: %s matches %s?\n", directory_entry.name, target);
++        if(strcmp(directory_entry.name, target) == 0) { // check if file name matches target
++            //printf("DEBUG: MATCHED\n");
++            printf("%s\n", buffer);
++        }
++
++        if(stats.type == T_DIR) {
++            find(buffer, target); // enter next directory (recursion)
++        }
++    }
++}
++
++int main(int argc, char *argv[]) {
++  if (argc != 3) {
++    printf("Usage: find <path> <filename>\n");
++    exit();
++  }
++
++  find(argv[1], argv[2]);
++  exit();
++}
+\ No newline at end of file
+diff --git a/user/sleep.c b/user/sleep.c
+new file mode 100644
+index 0000000..e18672e
+--- /dev/null
++++ b/user/sleep.c
+@@ -0,0 +1,19 @@
++#include "kernel/types.h"
++#include "kernel/stat.h"
++#include "user/user.h"
++
++int main(int argc, char *argv[]) {
++    // use ticks at time measurement
++    // get start time at function call,
++        // wait(ticks)
++    // check to see if time equals start time + inputted wait time (end time)
++        // if equal or higher, continue execution
++
++    if(argc <= 1) {
++        printf("sleep: no arguments passed!\n");
++        exit();
++    }
++    
++    sleep(atoi(argv[1]));
++    exit();
++}
+\ No newline at end of file
+diff --git a/user/xargs.c b/user/xargs.c
+new file mode 100644
+index 0000000..16234eb
+--- /dev/null
++++ b/user/xargs.c
+@@ -0,0 +1,88 @@
++#include "kernel/types.h"
++#include "user/user.h"
++#include "kernel/fs.h"
++#include "kernel/param.h" // For MAXARG
++
++//TODO: for some reason the debug print statement doesnt correctly read out the initial_cmd after modifying it. 
++// might be a sign of unexpected behavior?
++
++void run_command(char **initial_cmd, char *piped_input, int initial_cmd_count) {
++    /*
++    printf("DEBUG: Running command with parameters:\n");
++    for(int i = 0; initial_cmd[i] != 0; i++) {
++        printf("DEBUG: initial_cmd[%d] - %s\n", i, initial_cmd[i]);
++    }
++    printf("DEBUG: arg - %s\n", piped_input);
++    printf("DEBUG: initial_cmd_count - %d\n", initial_cmd_count);
++    */
++
++    // adds the additional argument from the input line
++    initial_cmd[initial_cmd_count++] = piped_input;
++    initial_cmd[initial_cmd_count] = 0; // Null-terminate the argv array
++
++    /*
++    for(int i = 0; initial_cmd[i] != 0; i++) {
++            printf("DEBUG: initial_cmd[%d] - %s\n", i, initial_cmd[i]);
++    }
++    */
++
++    // fork a child process to execute the command
++    int pid = fork();
++    if (pid < 0) {
++        printf("ERROR: xargs: fork()\n");
++        exit();
++    } else if (pid == 0) {
++        // In child process, execute the command
++        //printf("DEBUG: CHILD PROCESS pid - %d\n", pid);
++        
++        exec(initial_cmd[0], initial_cmd); //(path of executable aka executable name, arguments)
++        printf("ERROR: xargs: exec()\n");
++        exit();
++    } else {
++        //printf("DEBUG: PARENT PROCESS pid - %d\n", pid);
++        // In parent process, wait for the child to complete
++        wait();
++        //printf("DEBUG: child_pid - %d\n", child_pid);
++    }
++}
++
++int main(int argc, char *argv[]) {
++    /*
++    for(int i = 0; i < argc; i++) {
++            printf("DEBUG: argv[%d] - %s\n", i, argv[i]);
++    }
++    */
++
++    if (argc < 2) { // must have atleast one argument
++        printf("Usage: xargs <command>\n");
++        exit();
++    }
++
++    // read() input lines one char at a time
++    char line[MAX_LINE];
++    int index = 0;
++    while (1) {
++        char c;
++        int bytes_read = read(0, &c, 1); // 0 for stdin
++        //printf("DEBUG: %c\n", c);
++        //printf("DEBUG: index before - %d\n", index);
++        if (bytes_read <= 0) { // End of piped input or error
++            //printf("DEBUG: End of piped input\n");
++            if (index > 0) {
++                line[index] = 0; // null terminate the line
++                run_command(argv + 1, line, argc - 1);
++            }
++            break;
++        } else if (c == '\n') {
++            //printf("DEBUG: End of line found\n");
++            line[index] = 0; // null terminate the line
++            run_command(argv + 1, line, argc - 1);
++            index = 0; // reset for the next line
++        } else if (index < MAX_LINE - 1) { // if index not at the end of the line
++            line[index++] = c; // increment index
++        }
++        //printf("DEBUG: index after - %d\n", index);
++    }
++
++    return 0;
++}
