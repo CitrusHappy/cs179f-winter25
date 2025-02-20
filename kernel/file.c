@@ -12,36 +12,46 @@
 #include "file.h"
 #include "stat.h"
 #include "proc.h"
-#include "memlayout.h" // for PHYSTOP
 
 struct devsw devsw[NDEV];
-
-extern char end[]; // first address after kernel.
-                   // defined by kernel.ld.
+struct {
+  struct spinlock lock;
+  struct file file[NFILE]; // file array of size NFILE
+} ftable;
 
 void
 fileinit(void)
 {
-  bd_init((void*)end, (void*)PHYSTOP); // provides a range of memory for file use
-  // for Lab 2 we want to use all free memory, so from [end] to [PHYSTOP]
+  initlock(&ftable.lock, "ftable");
 }
 
 // Allocate a file structure.
-struct file* filealloc(void) {
-  struct file *f = (struct file *) bd_malloc(sizeof(struct file)); // try to allocate memory for a new file
-  if (!f) return 0; // couldn't allocate memory, return
-  memset(f, 0, sizeof(struct file)); // make sure the location found is clean (nothing else stored there), set to 0
-  f->ref = 1; // mark file as being used
-  return f;
+struct file*
+filealloc(void)
+{
+  struct file *f;
+
+  acquire(&ftable.lock); // Lock to ensure table isn't accessed by two diff procs at same time
+  for(f = ftable.file; f < ftable.file + NFILE; f++){ // Look for a free file slot
+    if(f->ref == 0){ // Unused file slot found
+      f->ref = 1; // Designate that we are now using this file
+      release(&ftable.lock);
+      return f;
+    }
+  }
+  release(&ftable.lock);
+  return 0;
 }
 
 // Increment ref count for file f.
 struct file*
 filedup(struct file *f)
 {
+  acquire(&ftable.lock);
   if(f->ref < 1)
     panic("filedup");
   f->ref++;
+  release(&ftable.lock);
   return f;
 }
 
@@ -49,13 +59,27 @@ filedup(struct file *f)
 void
 fileclose(struct file *f)
 {
+  struct file ff;
+
+  acquire(&ftable.lock);
   if(f->ref < 1)
     panic("fileclose");
-  if(--f->ref > 0){ // another process is still using f, keep it open
+  if(--f->ref > 0){
+    release(&ftable.lock);
     return;
   }
+  ff = *f;
+  f->ref = 0;
+  f->type = FD_NONE;
+  release(&ftable.lock);
 
-  bd_free(f);
+  if(ff.type == FD_PIPE){
+    pipeclose(ff.pipe, ff.writable);
+  } else if(ff.type == FD_INODE || ff.type == FD_DEVICE){
+    begin_op(ff.ip->dev);
+    iput(ff.ip);
+    end_op(ff.ip->dev);
+  }
 }
 
 // Get metadata about file f.
