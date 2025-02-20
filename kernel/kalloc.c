@@ -23,10 +23,19 @@ struct {
   struct run *freelist;
 } kmem;
 
+struct { // LAB3
+  struct spinlock lock;
+  int refcount[PHYPAGES]; // points to linked list of pages, at the head
+} kpage;
+
 void
 kinit()
 {
   initlock(&kmem.lock, "kmem");
+  initlock(&kpage.lock, "kpage"); //LAB3
+  for (int i = 0; i < PHYPAGES; i++) {
+    kpage.refcount[i] = 0; // init page ref counts to 0
+  }
   freerange(end, (void*)PHYSTOP);
 }
 
@@ -39,6 +48,15 @@ freerange(void *pa_start, void *pa_end)
     kfree(p);
 }
 
+// LAB3
+// increments ref count for the page at a specific physical address
+void increment_ref(uint64 pa) {
+  uint64 pageindex = (pa - KERNBASE) / PGSIZE;
+  acquire(&kpage.lock);
+  kpage.refcount[pageindex]++; // LAB3: set ref to 1 by incrementing by 1
+  release(&kpage.lock);
+}
+
 // Free the page of physical memory pointed at by v,
 // which normally should have been returned by a
 // call to kalloc().  (The exception is when
@@ -46,6 +64,17 @@ freerange(void *pa_start, void *pa_end)
 void
 kfree(void *pa)
 {
+  // LAB3: check to see if no other procs are using this page
+  uint64 pageindex = ((uint64)pa - KERNBASE) / PGSIZE;
+  acquire(&kpage.lock);
+  // if ref > 0, a proc is still using it.
+  if (kpage.refcount[pageindex] > 0) {
+    kpage.refcount[pageindex]--; // decrease ref by 1
+    release(&kpage.lock);
+    return; // skips kfree (for now)
+  }
+  release(&kpage.lock);
+
   struct run *r;
 
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
@@ -69,6 +98,7 @@ void *
 kalloc(void)
 {
   struct run *r;
+  uint64 pa; // physical address of a page
 
   acquire(&kmem.lock);
   r = kmem.freelist;
@@ -76,7 +106,11 @@ kalloc(void)
     kmem.freelist = r->next;
   release(&kmem.lock);
 
-  if(r)
+  if(r) { // LAB3: r exists, so it is not zero
+    pa = (uint64)r; 
+    increment_ref(pa); // set ref to 1 by incrementing by 1
     memset((char*)r, 5, PGSIZE); // fill with junk
+  }
+
   return (void*)r;
 }
