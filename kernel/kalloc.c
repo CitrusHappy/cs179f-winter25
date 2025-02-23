@@ -5,7 +5,6 @@
 #include "types.h"
 #include "param.h"
 #include "memlayout.h"
-#include "kalloc.h"
 #include "spinlock.h"
 #include "riscv.h"
 #include "defs.h"
@@ -108,6 +107,7 @@ kalloc(void)
 
   if(r) { // if 0x0, aka not null
     memset((char*)r, 5, PGSIZE); // fill with junk
+
     uint64 pageindex = (uint64)r / PGSIZE;
     acquire(&ref_lock.lock);
     ref_lock.refcount[pageindex] = 1; // set ref to 1
