@@ -23,7 +23,7 @@ struct {
   struct run *freelist;
 } kmem;
 
-struct { // LAB3
+extern struct { // LAB3
   struct spinlock lock;
   int refcount[PHYPAGES]; // points to linked list of pages, at the head
 } kpage;

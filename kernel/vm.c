@@ -324,18 +324,22 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   uint flags;
   char *mem;
 
-  for(i = 0; i < sz; i += PGSIZE){
-    if((pte = walk(old, i, 0)) == 0)
+  for(i = 0; i < sz; i += PGSIZE){ // loops through virtual address space up to sz (the proc's memory size)
+    if((pte = walk(old, i, 0)) == 0) // check to see if the PTE at virtual address i exists
       panic("uvmcopy: pte should exist");
-    if((*pte & PTE_V) == 0)
+    if((*pte & PTE_V) == 0) // checks to see if PTE flag bit is valid/present
       panic("uvmcopy: page not present");
-    pa = PTE2PA(*pte);
-    flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
+
+    pa = PTE2PA(*pte); // converts parent PTE to PA
+    flags = PTE_FLAGS(*pte); // retrieves the flags from the PTE
+
+    if((mem = kalloc()) == 0) // allocates a new page of phys memory
       goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
+
+    memmove(mem, (char*)pa, PGSIZE); // copy block of memory from parent's page PA to the new page of phys memory [mem] we allocated
+
+    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){ // if failed to map a PTE VA for our new page of phys memory
+      kfree(mem); // free our new page of phys memory [mem]
       goto err;
     }
   }
