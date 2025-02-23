@@ -88,9 +88,8 @@ usertrap(void)
       char *physpage_new;
       char *pa0 = (char *)PTE2PA(*pte_fault);
 
-      if((physpage_new = kalloc()) == 0) { // allocates a new page of phys memory
-        printf("ERR: usertrap(): failed to alloc new phys memory page\n");
-        p->killed = 1;
+      if((physpage_new = kalloc()) == 0) {
+        p->killed = 1; // no available memory
         exit(-1);
       }
 
@@ -98,6 +97,12 @@ usertrap(void)
 
       // unmap the faulting virtual page from the COW page
       uvmunmap(p->pagetable, va_fault, PGSIZE, 0);
+
+      // decrement page reference counter of PA
+      uint64 pageindex = (uint64)pa0/PGSIZE;
+      acquire(&ref_lock.lock);
+      ref_lock.refcount[pageindex]--;
+      release(&ref_lock.lock);
 
       // map the faulting virtual page to new page
       if(mappages(p->pagetable, va_fault, PGSIZE, (uint64)physpage_new, flags) != 0) { // failed to map a PTE VA for our new page of phys memory

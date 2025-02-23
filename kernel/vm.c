@@ -330,21 +330,24 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     if((*pte & PTE_V) == 0) // checks to see if PTE flag bit is valid/present
       panic("uvmcopy: page not present");
 
-    pa = PTE2PA(*pte); // converts parent PTE to PA
-    flags = PTE_FLAGS(*pte); // retrieves the flags from parent PTE
-    flags &= (~PTE_W); // removes write access of parent PTE
-    flags |= PTE_COW; // removes write access of parent PTE
 
-    if(mappages(new, i, PGSIZE, pa, flags) != 0) { // map parent's PA to child's VA
+    pa = PTE2PA(*pte); // converts child PTE to PA
+    flags = PTE_FLAGS(*pte); // retrieves the flags from child PTE
+    flags |= PTE_COW;
+    flags &= (~PTE_W); // removes write access for child and parent PTEs
+
+    if(mappages(new, i, PGSIZE, (uint64)pa, flags) != 0) { // map parent's PA to child's VA
       printf("ERR: uvmcopy() failed to map page");
       goto err; // failed to map page
     }
 
     // increment page reference counter of parent PA
-    uint64 pageindex = pa/PGSIZE;
-    acquire(&ref_lock.lock);
-    ref_lock.refcount[pageindex]++; // LAB3: set ref to 1 by incrementing by 1
-    release(&ref_lock.lock);
+    increment_ref(pa);
+
+    uvmunmap(old, i, PGSIZE, 0); // remove parent mapping
+    if(mappages(old, i, PGSIZE, pa, flags) != 0) { // update mapping with new flags
+      goto err;
+    }
   }
   return 0;
 
@@ -391,20 +394,20 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
         char *pa0 = (char *)PTE2PA(*pte_fault);
       
         if((physpage_new = kalloc()) == 0) { // allocates a new page of phys memory
-          printf("ERR: usertrap(): failed to alloc new phys memory page\n");
+          printf("ERR: copyout(): failed to alloc new phys memory page\n");
           exit(-1);
         }
+      
+        memmove(physpage_new, pa0, PGSIZE); // copy block of memory from parent's page PA to the new page of phys memory [physpage_new] we allocated
+      
+        // unmap the faulting virtual page from the COW page
+        uvmunmap(pagetable, va0, PGSIZE, 0);
 
         // decrement page reference counter of PA
         uint64 pageindex = (uint64)pa0/PGSIZE;
         acquire(&ref_lock.lock);
         ref_lock.refcount[pageindex]--;
         release(&ref_lock.lock);
-      
-        memmove(physpage_new, pa0, PGSIZE); // copy block of memory from parent's page PA to the new page of phys memory [physpage_new] we allocated
-      
-        // unmap the faulting virtual page from the COW page
-        uvmunmap(pagetable, va0, PGSIZE, 0);
       
         // map the faulting virtual page to new page
         if(mappages(pagetable, va0, PGSIZE, (uint64)physpage_new, flags) != 0) { // failed to map a PTE VA for our new page of phys memory

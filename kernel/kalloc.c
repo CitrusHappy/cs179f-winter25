@@ -39,10 +39,11 @@ freerange(void *pa_start, void *pa_end)
   char *p;
   p = (char*)PGROUNDUP((uint64)pa_start);
   for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE) {
-    uint64 pageindex = (uint64)p / PGSIZE;
     acquire(&ref_lock.lock);
+    uint64 pageindex = (uint64)p / PGSIZE;
     ref_lock.refcount[pageindex] = 1; // init page ref count to 1 - kfree() = 0
     release(&ref_lock.lock);
+    
     kfree(p);
   }
 }
@@ -50,8 +51,8 @@ freerange(void *pa_start, void *pa_end)
 // LAB3
 // increments ref count for the page at a specific physical address
 void increment_ref(uint64 pa) {
-  uint64 pageindex = (uint64)pa / PGSIZE;
   acquire(&ref_lock.lock);
+  uint64 pageindex = (uint64)pa / PGSIZE;
   ref_lock.refcount[pageindex]++; // LAB3: set ref to 1 by incrementing by 1
   release(&ref_lock.lock);
 }
@@ -64,8 +65,8 @@ void
 kfree(void *pa)
 {
   // LAB3: check to see if no other procs are using this page
-  uint64 pageindex = (uint64)pa / PGSIZE;
   acquire(&ref_lock.lock);
+  uint64 pageindex = (uint64)pa / PGSIZE;
   ref_lock.refcount[pageindex]--; // decrease ref by 1
   release(&ref_lock.lock);
   
@@ -104,8 +105,8 @@ kalloc(void)
   if(r) { // if 0x0, aka not null
     memset((char*)r, 5, PGSIZE); // fill with junk
 
-    uint64 pageindex = (uint64)r / PGSIZE;
     acquire(&ref_lock.lock);
+    uint64 pageindex = (uint64)r / PGSIZE;
     ref_lock.refcount[pageindex] = 1; // set ref to 1
     release(&ref_lock.lock);
   }
