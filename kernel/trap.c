@@ -72,43 +72,37 @@ usertrap(void)
     // ok
   } else if(r_scause() == 15) { // write page fault
     //LAB 3
-    uint64 va_fault;
-    uint64 pa_fault;
+    uint64 va_fault= PGROUNDDOWN(r_stval()); // get VA from current trapped process
+    
     pte_t *pte_fault;
-    uint64 flags_fault;
-
-    va_fault = r_stval(); // get VA from current trapped process
-    *pte_fault = PA2PTE(pa_fault);
   
-    if((pa_fault = walkaddr(p->pagetable, va_fault)) == 0) // check to see if the PA at virtual address va_fault exists
+    if((pte_fault = walk(p->pagetable, va_fault, 0)) == 0) // check to see if the PA at virtual address va_fault exists
       panic("usertrap(): pte_fault should exist\n");
 
-    flags_fault = PTE_FLAGS(*pte_fault); // retrieves the flags_fault from the PTE
+    if((*pte_fault & PTE_V) && (*pte_fault & PTE_U) && *pte_fault & PTE_COW) { // is a COW page
+      // for the physpage_new, turn on PTE_W
+      uint flags = PTE_FLAGS(*pte_fault);
+      flags |= PTE_W;
+      flags &= (~PTE_COW);
 
-    if(flags_fault & PTE_COW) { // is a COW page
       char *physpage_new;
-      pte_t *pte_new;
-      uint64 flags_new;
+      char *pa0 = (char *)PTE2PA(*pte_fault);
 
       if((physpage_new = kalloc()) == 0) { // allocates a new page of phys memory
         printf("ERR: usertrap(): failed to alloc new phys memory page\n");
+        p->killed = 1;
         exit(-1);
       }
 
-      memmove(physpage_new, (char *)pa_fault, PGSIZE); // copy block of memory from parent's page PA to the new page of phys memory [physpage_new] we allocated
-
-      // for the physpage_new, turn on PTE_W
-      *pte_new = PA2PTE((uint64)physpage_new);
-      flags_new = PTE_FLAGS(*pte_new);
-      flags_new |= PTE_W;
+      memmove(physpage_new, pa0, PGSIZE); // copy block of memory from parent's page PA to the new page of phys memory [physpage_new] we allocated
 
       // unmap the faulting virtual page from the COW page
       uvmunmap(p->pagetable, va_fault, PGSIZE, 0);
 
       // map the faulting virtual page to new page
-      if(mappages(p->pagetable, va_fault, PGSIZE, (uint64)physpage_new, flags_new) != 0) { // failed to map a PTE VA for our new page of phys memory
+      if(mappages(p->pagetable, va_fault, PGSIZE, (uint64)physpage_new, flags) != 0) { // failed to map a PTE VA for our new page of phys memory
         printf("ERR: usertrap(): failed to map virtual page\n");
-        kfree(physpage_new); // free our new page of phys memory [physpage_new]
+        p->killed = 1;
         exit(-1);
       }
     }

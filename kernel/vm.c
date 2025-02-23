@@ -76,7 +76,7 @@ kvminithart()
 //   21..39 -- 9 bits of level-1 index.
 //   12..20 -- 9 bits of level-0 index.
 //    0..12 -- 12 bits of byte offset within the page.
-static pte_t *
+pte_t *
 walk(pagetable_t pagetable, uint64 va, int alloc)
 {
   if(va >= MAXVA)
@@ -329,12 +329,11 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
       panic("uvmcopy: pte should exist");
     if((*pte & PTE_V) == 0) // checks to see if PTE flag bit is valid/present
       panic("uvmcopy: page not present");
-    
-    *pte &= ~PTE_W; // removes write access of parent PTE
-    *pte |= PTE_COW; // removes write access of parent PTE
 
     pa = PTE2PA(*pte); // converts parent PTE to PA
     flags = PTE_FLAGS(*pte); // retrieves the flags from parent PTE
+    flags &= (~PTE_W); // removes write access of parent PTE
+    flags |= PTE_COW; // removes write access of parent PTE
 
     if(mappages(new, i, PGSIZE, pa, flags) != 0) { // map parent's PA to child's VA
       printf("ERR: uvmcopy() failed to map page");
@@ -373,21 +372,58 @@ uvmclear(pagetable_t pagetable, uint64 va)
 int
 copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 {
-  uint64 n, va0, pa0;
+  uint64 n, va0;
 
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
-    pa0 = walkaddr(pagetable, va0);
-    if(pa0 == 0)
+    pte_t *pte_fault = walk(pagetable, va0, 0);
+    if(pte_fault == 0)
       return -1;
-    n = PGSIZE - (dstva - va0);
-    if(n > len)
-      n = len;
-    memmove((void *)(pa0 + (dstva - va0)), src, n);
 
-    len -= n;
-    src += n;
-    dstva = va0 + PGSIZE;
+    if ((*pte_fault & PTE_W) == 0) { // not writable
+      if((*pte_fault & PTE_V) && (*pte_fault & PTE_U) && *pte_fault & PTE_COW) { // is a COW page
+        // set flags
+        uint flags = PTE_FLAGS(*pte_fault);
+        flags |= PTE_W;
+        flags &= (~PTE_COW);
+
+        char *physpage_new;
+        char *pa0 = (char *)PTE2PA(*pte_fault);
+      
+        if((physpage_new = kalloc()) == 0) { // allocates a new page of phys memory
+          printf("ERR: usertrap(): failed to alloc new phys memory page\n");
+          exit(-1);
+        }
+
+        // decrement page reference counter of PA
+        uint64 pageindex = (uint64)pa0/PGSIZE;
+        acquire(&ref_lock.lock);
+        ref_lock.refcount[pageindex]--;
+        release(&ref_lock.lock);
+      
+        memmove(physpage_new, pa0, PGSIZE); // copy block of memory from parent's page PA to the new page of phys memory [physpage_new] we allocated
+      
+        // unmap the faulting virtual page from the COW page
+        uvmunmap(pagetable, va0, PGSIZE, 0);
+      
+        // map the faulting virtual page to new page
+        if(mappages(pagetable, va0, PGSIZE, (uint64)physpage_new, flags) != 0) { // failed to map a PTE VA for our new page of phys memory
+          printf("ERR: usertrap(): failed to map virtual page\n");
+          exit(-1);
+        }
+      }
+    } else { //writable
+      uint64 pa0;
+      pa0 = PTE2PA(*pte_fault);
+      n = PGSIZE - (dstva - va0);
+      if(n > len)
+        n = len;
+      memmove((void *)(pa0 + (dstva - va0)), src, n);
+  
+      len -= n;
+      src += n;
+      dstva = va0 + PGSIZE;
+    }
   }
   return 0;
 }
