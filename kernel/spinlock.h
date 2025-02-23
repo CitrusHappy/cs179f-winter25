@@ -1,3 +1,6 @@
+#include "memlayout.h"
+#include "param.h"
+
 // Mutual exclusion lock.
 struct spinlock {
   uint locked;       // Is the lock held?
@@ -9,3 +12,7 @@ struct spinlock {
   uint nts;
 };
 
+extern struct ref_locked{ // LAB3
+  struct spinlock lock;
+  int refcount[PHYSTOP/PGSIZE]; // points to linked list of pages, at the head
+} ref_lock;

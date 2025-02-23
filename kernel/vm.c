@@ -5,6 +5,7 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
 
 /*
  * the kernel's page table.
@@ -322,26 +323,28 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){ // loops through virtual address space up to sz (the proc's memory size)
     if((pte = walk(old, i, 0)) == 0) // check to see if the PTE at virtual address i exists
       panic("uvmcopy: pte should exist");
     if((*pte & PTE_V) == 0) // checks to see if PTE flag bit is valid/present
       panic("uvmcopy: page not present");
+    
+    *pte &= ~PTE_W; // removes write access of parent PTE
 
     pa = PTE2PA(*pte); // converts parent PTE to PA
-    flags = PTE_FLAGS(*pte); // retrieves the flags from the PTE
+    flags = PTE_FLAGS(*pte); // retrieves the flags from parent PTE
 
-    if((mem = kalloc()) == 0) // allocates a new page of phys memory
-      goto err;
-
-    memmove(mem, (char*)pa, PGSIZE); // copy block of memory from parent's page PA to the new page of phys memory [mem] we allocated
-
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){ // if failed to map a PTE VA for our new page of phys memory
-      kfree(mem); // free our new page of phys memory [mem]
-      goto err;
+    if(mappages(new, i, PGSIZE, pa, flags) != 0) { // map parent's PA to child's VA
+      printf("ERR: uvmcopy() failed to map page");
+      goto err; // failed to map page
     }
+
+    // increment page reference counter of parent PA
+    uint64 pageindex = pa/PGSIZE;
+    acquire(&ref_lock.lock);
+    ref_lock.refcount[pageindex]++; // LAB3: set ref to 1 by incrementing by 1
+    release(&ref_lock.lock);
   }
   return 0;
 

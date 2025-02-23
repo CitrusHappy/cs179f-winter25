@@ -5,6 +5,7 @@
 #include "types.h"
 #include "param.h"
 #include "memlayout.h"
+#include "kalloc.h"
 #include "spinlock.h"
 #include "riscv.h"
 #include "defs.h"
@@ -18,24 +19,18 @@ struct run {
   struct run *next;
 };
 
+struct ref_locked ref_lock;
+
 struct {
   struct spinlock lock;
   struct run *freelist;
 } kmem;
 
-extern struct { // LAB3
-  struct spinlock lock;
-  int refcount[PHYPAGES]; // points to linked list of pages, at the head
-} kpage;
-
 void
 kinit()
 {
   initlock(&kmem.lock, "kmem");
-  initlock(&kpage.lock, "kpage"); //LAB3
-  for (int i = 0; i < PHYPAGES; i++) {
-    kpage.refcount[i] = 0; // init page ref counts to 0
-  }
+  initlock(&ref_lock.lock, "ref_lock"); //LAB3
   freerange(end, (void*)PHYSTOP);
 }
 
@@ -44,17 +39,22 @@ freerange(void *pa_start, void *pa_end)
 {
   char *p;
   p = (char*)PGROUNDUP((uint64)pa_start);
-  for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE)
+  for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE) {
+    uint64 pageindex = (uint64)p / PGSIZE;
+    acquire(&ref_lock.lock);
+    ref_lock.refcount[pageindex] = 1; // init page ref count to 1 - kfree() = 0
+    release(&ref_lock.lock);
     kfree(p);
+  }
 }
 
 // LAB3
 // increments ref count for the page at a specific physical address
 void increment_ref(uint64 pa) {
-  uint64 pageindex = (pa - KERNBASE) / PGSIZE;
-  acquire(&kpage.lock);
-  kpage.refcount[pageindex]++; // LAB3: set ref to 1 by incrementing by 1
-  release(&kpage.lock);
+  uint64 pageindex = (uint64)pa / PGSIZE;
+  acquire(&ref_lock.lock);
+  ref_lock.refcount[pageindex]++; // LAB3: set ref to 1 by incrementing by 1
+  release(&ref_lock.lock);
 }
 
 // Free the page of physical memory pointed at by v,
@@ -65,16 +65,17 @@ void
 kfree(void *pa)
 {
   // LAB3: check to see if no other procs are using this page
-  uint64 pageindex = ((uint64)pa - KERNBASE) / PGSIZE;
-  acquire(&kpage.lock);
-  // if ref > 0, a proc is still using it.
-  if (kpage.refcount[pageindex] > 0) {
-    kpage.refcount[pageindex]--; // decrease ref by 1
-    release(&kpage.lock);
-    return; // skips kfree (for now)
+  uint64 pageindex = (uint64)pa / PGSIZE;
+  acquire(&ref_lock.lock);
+  
+  if (ref_lock.refcount[pageindex] > 0) { // if ref > 0, a proc is still using the page.
+    ref_lock.refcount[pageindex]--; // decrease ref by 1
+    release(&ref_lock.lock);
+    return; // skips current kfree call (for now)
   }
-  release(&kpage.lock);
+  release(&ref_lock.lock);
 
+  // no more procs are using the page, free it
   struct run *r;
 
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
@@ -98,18 +99,19 @@ void *
 kalloc(void)
 {
   struct run *r;
-  uint64 pa; // physical address of a page
 
   acquire(&kmem.lock);
   r = kmem.freelist;
-  if(r)
-    kmem.freelist = r->next;
+  if(r) // if 0x0, aka not null
+    kmem.freelist = r->next; // then go to the next one
   release(&kmem.lock);
 
-  if(r) { // LAB3: r exists, so it is not zero
-    pa = (uint64)r; 
-    increment_ref(pa); // set ref to 1 by incrementing by 1
+  if(r) { // if 0x0, aka not null
     memset((char*)r, 5, PGSIZE); // fill with junk
+    uint64 pageindex = (uint64)r / PGSIZE;
+    acquire(&ref_lock.lock);
+    ref_lock.refcount[pageindex] = 1; // set ref to 1
+    release(&ref_lock.lock);
   }
 
   return (void*)r;
