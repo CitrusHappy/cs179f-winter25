@@ -331,6 +331,7 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
       panic("uvmcopy: page not present");
     
     *pte &= ~PTE_W; // removes write access of parent PTE
+    *pte |= PTE_COW; // removes write access of parent PTE
 
     pa = PTE2PA(*pte); // converts parent PTE to PA
     flags = PTE_FLAGS(*pte); // retrieves the flags from parent PTE

@@ -70,6 +70,48 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+  } else if(r_scause() == 15) { // write page fault
+    //LAB 3
+    uint64 va_fault;
+    uint64 pa_fault;
+    pte_t *pte_fault;
+    uint64 flags_fault;
+
+    va_fault = r_stval(); // get VA from current trapped process
+    *pte_fault = PA2PTE(pa_fault);
+  
+    if((pa_fault = walkaddr(p->pagetable, va_fault)) == 0) // check to see if the PA at virtual address va_fault exists
+      panic("usertrap(): pte_fault should exist\n");
+
+    flags_fault = PTE_FLAGS(*pte_fault); // retrieves the flags_fault from the PTE
+
+    if(flags_fault & PTE_COW) { // is a COW page
+      char *physpage_new;
+      pte_t *pte_new;
+      uint64 flags_new;
+
+      if((physpage_new = kalloc()) == 0) { // allocates a new page of phys memory
+        printf("ERR: usertrap(): failed to alloc new phys memory page\n");
+        exit(-1);
+      }
+
+      memmove(physpage_new, (char *)pa_fault, PGSIZE); // copy block of memory from parent's page PA to the new page of phys memory [physpage_new] we allocated
+
+      // for the physpage_new, turn on PTE_W
+      *pte_new = PA2PTE((uint64)physpage_new);
+      flags_new = PTE_FLAGS(*pte_new);
+      flags_new |= PTE_W;
+
+      // unmap the faulting virtual page from the COW page
+      uvmunmap(p->pagetable, va_fault, PGSIZE, 0);
+
+      // map the faulting virtual page to new page
+      if(mappages(p->pagetable, va_fault, PGSIZE, (uint64)physpage_new, flags_new) != 0) { // failed to map a PTE VA for our new page of phys memory
+        printf("ERR: usertrap(): failed to map virtual page\n");
+        kfree(physpage_new); // free our new page of phys memory [physpage_new]
+        exit(-1);
+      }
+    }
   } else {
     printf("usertrap(): unexpected scause %p (%s) pid=%d\n", r_scause(), scause_desc(r_scause()), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());

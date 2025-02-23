@@ -66,29 +66,25 @@ kfree(void *pa)
   // LAB3: check to see if no other procs are using this page
   uint64 pageindex = (uint64)pa / PGSIZE;
   acquire(&ref_lock.lock);
-  
-  if (ref_lock.refcount[pageindex] > 0) { // if ref > 0, a proc is still using the page.
-    ref_lock.refcount[pageindex]--; // decrease ref by 1
-    release(&ref_lock.lock);
-    return; // skips current kfree call (for now)
-  }
+  ref_lock.refcount[pageindex]--; // decrease ref by 1
   release(&ref_lock.lock);
+  
+  if (ref_lock.refcount[pageindex] == 0) { // if ref == 0, no procs are using the page.
+    struct run *r;
 
-  // no more procs are using the page, free it
-  struct run *r;
+    if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
+      panic("kfree");
 
-  if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
-    panic("kfree");
+    // Fill with junk to catch dangling refs.
+    memset(pa, 1, PGSIZE);
 
-  // Fill with junk to catch dangling refs.
-  memset(pa, 1, PGSIZE);
+    r = (struct run*)pa;
 
-  r = (struct run*)pa;
-
-  acquire(&kmem.lock);
-  r->next = kmem.freelist;
-  kmem.freelist = r;
-  release(&kmem.lock);
+    acquire(&kmem.lock);
+    r->next = kmem.freelist;
+    kmem.freelist = r;
+    release(&kmem.lock);
+  }
 }
 
 // Allocate one 4096-byte page of physical memory.
