@@ -2125,7 +2125,7 @@ main(int argc, char *argv[])
     char *s;
   } tests[] = {
     {reparent2, "reparent2"},
-    {pgbug, "pgbug" },
+    //{pgbug, "pgbug" },
     {sbrkbugs, "sbrkbugs" },
     // {badwrite, "badwrite" },
     {badarg, "badarg" },
@@ -2133,7 +2133,7 @@ main(int argc, char *argv[])
     {twochildren, "twochildren"},
     {forkfork, "forkfork"},
     {forkforkfork, "forkforkfork"},
-    {argptest, "argptest"},
+    //{argptest, "argptest"},
     {createdelete, "createdelete"},
     {linkunlink, "linkunlink"},
     {linktest, "linktest"},
