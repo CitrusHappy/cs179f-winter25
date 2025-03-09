@@ -355,6 +355,19 @@ sys_open(void)
 
   begin_op(ROOTDEV);
 
+  /*
+  // O_NOFOLLOW is set
+  if(omode & O_NOFOLLOW) {
+    // open symbolic link
+    sys_open(path, );
+  } else { // O_NOFOLLOW is not set
+
+  }
+  */
+
+  
+
+
   if(omode & O_CREATE) { // create a new file
     ip = create(path, T_FILE, 0, 0);
     if(ip == 0) { // couldnt create file
