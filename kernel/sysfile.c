@@ -126,23 +126,23 @@ sys_link(void)
     return -1;
 
   begin_op(ROOTDEV);
-  if((ip = namei(old)) == 0){
+  if((ip = namei(old)) == 0){ // if inode doesnt exist at path
     end_op(ROOTDEV);
     return -1;
   }
 
   ilock(ip);
-  if(ip->type == T_DIR){
+  if(ip->type == T_DIR){ // if inode is T_DIR
     iunlockput(ip);
     end_op(ROOTDEV);
     return -1;
   }
 
-  ip->nlink++;
+  ip->nlink++; // increment links
   iupdate(ip);
-  iunlock(ip);
+  iunlock(ip); // done editing inode
 
-  if((dp = nameiparent(new, name)) == 0)
+  if((dp = nameiparent(new, name)) == 0) // no parent found
     goto bad;
   ilock(dp);
   if(dp->dev != ip->dev || dirlink(dp, name, ip->inum) < 0){
@@ -284,9 +284,60 @@ create(char *path, short type, short major, short minor)
 }
 
 uint64
-sys_symlink(void)
+sys_symlink(void) // LAB 4
 {
-  //your implementation goes here
+  char target[MAXPATH], path[MAXPATH];
+  struct inode *dp, *ip;
+  int result;
+  uint inum;
+  
+  // null check and get values from args
+  if(argstr(0, target, MAXPATH) < 0 || argstr(1, path, MAXPATH) < 0)
+    return -1;
+
+  begin_op(ROOTDEV); // start system call
+
+  // create the inode for the symbolic link
+  if ((ip = create(path, T_SYMLINK, 0, 0)) == 0) {
+    end_op(ROOTDEV);
+    return -1;
+  }
+
+  ilock(ip);
+
+  // check if target is a possible size
+  if (strlen(target) >= BSIZE) {
+    iunlockput(ip);
+    end_op(ROOTDEV);
+    return -1;
+  }
+
+  // srite the target path to the symlink inode
+  writei(ip, (int)target, (uint64)target, 0, strlen(target));
+
+  // update the inode with the changes made to data block
+  iupdate(ip);
+
+  // link the symlink inode to the directory
+  if ((dp = namei(path)) == 0) { // if namei fails
+    iunlockput(ip);
+    end_op(ROOTDEV);
+    return -1;
+  }
+
+  // put the symlink into the directory
+  inum = ip->inum;
+  if (dirlink(dp, path, inum) < 0) {
+    iunlockput(dp); 
+    iunlockput(ip);
+    end_op(ROOTDEV);
+    return -1;
+  }
+
+  iunlockput(dp);
+  iunlockput(ip);
+  end_op(ROOTDEV);
+
   return 0;
 }
 
@@ -304,31 +355,67 @@ sys_open(void)
 
   begin_op(ROOTDEV);
 
-  if(omode & O_CREATE){
+  if(omode & O_CREATE) { // create a new file
     ip = create(path, T_FILE, 0, 0);
-    if(ip == 0){
+    if(ip == 0) { // couldnt create file
       end_op(ROOTDEV);
       return -1;
     }
   } else {
-    if((ip = namei(path)) == 0){
+    ip = namei(path);
+    if(ip == 0){ // no inode found
       end_op(ROOTDEV);
       return -1;
     }
+
+    int depth = 0;
+    while(ip->type == T_SYMLINK) {
+      // check for infinite loops or depth check
+      if (depth >= 10) { // max allowed depth of symlinks
+          iunlockput(ip);
+          end_op(ROOTDEV);
+          return -1;
+      }
+
+      // read the target of the symlink
+      char target[MAXPATH];
+      if (readi(ip, (uint64)target, 0, 0, ip->size) < 0) { // nothing read
+          iunlockput(ip);
+          end_op(ROOTDEV);
+          return -1;
+      }
+
+      iunlockput(ip);
+      depth++;
+
+      // try to get the next iteration of inode
+      ip = namei(target);
+      if(ip == 0) { // no inode exists
+          end_op(ROOTDEV);
+          return -1;
+      }
+
+      ilock(ip);
+    }
+
     ilock(ip);
-    if(ip->type == T_DIR && omode != O_RDONLY){
+
+    // make sure the inode is not a directory or read only
+    if(ip->type == T_DIR && omode != O_RDONLY) {
       iunlockput(ip);
       end_op(ROOTDEV);
       return -1;
     }
   }
 
-  if(ip->type == T_DEVICE && (ip->major < 0 || ip->major >= NDEV)){
+  // ??? not sure what this checks
+  if(ip->type == T_DEVICE && (ip->major < 0 || ip->major >= NDEV)){ 
     iunlockput(ip);
     end_op(ROOTDEV);
     return -1;
   }
 
+  // file and file descriptor allocate
   if((f = filealloc()) == 0 || (fd = fdalloc(f)) < 0){
     if(f)
       fileclose(f);
@@ -337,6 +424,7 @@ sys_open(void)
     return -1;
   }
 
+  // something else i wont touch, probably some sort of default construction
   if(ip->type == T_DEVICE){
     f->type = FD_DEVICE;
     f->major = ip->major;
