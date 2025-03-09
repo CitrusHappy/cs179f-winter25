@@ -422,7 +422,7 @@ bmap(struct inode *ip, uint bn)
     brelse(bp);
 
     // read singly indirect block
-    bp = bread(ip->dev, addr);
+    bp2 = bread(ip->dev, addr);
     a = (uint*)bp2->data;
 
     // check if data block at position is allocated inside of singly indirect block
