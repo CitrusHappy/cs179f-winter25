@@ -145,8 +145,8 @@ UPROGS=\
 	$U/_bigfile\
 	$U/_symlinktest\
 
-fs.img: mkfs/mkfs README.md user/xargstest.sh $(UPROGS)
-	mkfs/mkfs fs.img README.md user/xargstest.sh $(UPROGS)
+fs.img: mkfs/mkfs README user/xargstest.sh $(UPROGS)
+	mkfs/mkfs fs.img README user/xargstest.sh $(UPROGS)
 
 -include kernel/*.d user/*.d
 
