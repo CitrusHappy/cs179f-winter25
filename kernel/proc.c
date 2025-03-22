@@ -285,6 +285,14 @@ fork(void)
 
   release(&np->lock);
 
+  // LAB5
+  for (int i = 0; i < MAX_VMAS; i++) {
+    np->vmas[i] = p->vmas[i];
+    if (p->vmas[i].addr) {
+        filedup(p->vmas[i].f);
+    }
+  }
+
   return pid;
 }
 
@@ -690,57 +698,3 @@ procdump(void)
     printf("\n");
   }
 }
-
-uint64 proc_mmap(struct proc *p, int length, int prot, int flags, int fd) {
-  /*
-  struct file *f = p->ofile[fd];
-  if (!f) return -1;
-
-  for (int i = 0; i < MAX_VMAS; i++) {
-      if (p->vmas[i].addr == 0) {  // Find empty slot
-          uint64 vaddr = PGROUNDUP(p->sz);  // Allocate at end of process memory
-          p->sz += length;
-
-          p->vmas[i].addr = vaddr;
-          p->vmas[i].length = length;
-          p->vmas[i].prot = prot;
-          p->vmas[i].flags = flags;
-          p->vmas[i].f = filedup(f); // Increase reference count
-
-          return vaddr;
-      }
-  }
-  */
-  return -1;
-}
-
-int proc_munmap(struct proc *p, uint64 addr, int length) {
-  /*
-  for (int i = 0; i < MAX_VMAS; i++) {
-      struct vma *v = &p->vmas[i];
-      if (v->addr <= addr && addr < v->addr + v->length) {
-          int unmap_length = min(length, v->length - (addr - v->addr));
-          if (v->flags & MAP_SHARED) {
-              filewrite(v->f, (void *)addr, unmap_length);
-          }
-          uvmunmap(p->pagetable, addr, unmap_length / PGSIZE, 1);
-
-          if (addr == v->addr) {
-              v->addr += unmap_length;
-              v->length -= unmap_length;
-          } else {
-              v->length -= unmap_length;
-          }
-
-          if (v->length == 0) {
-              fileclose(v->f);
-              memset(v, 0, sizeof(struct vma));
-          }
-
-          return 0;
-      }
-  }
-      */
-  return -1;
-}
-

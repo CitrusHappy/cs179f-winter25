@@ -483,24 +483,71 @@ sys_pipe(void)
   return 0;
 }
 
-uint64
-sys_mmap(void) {
-    uint64 addr;
-    int length, prot, flags, fd;
-    if (argint(1, &length) < 0 || argint(2, &prot) < 0 ||
-        argint(3, &flags) < 0 || argint(4, &fd) < 0) {
-        return -1;
-    }
-    addr = proc_mmap(myproc(), length, prot, flags, fd);
-    return addr;
+uint64 sys_mmap(void) {
+  struct proc *p = myproc();
+  int length, prot, flags, fd;
+  struct file *f;
+  
+  if (argint(1, &length) < 0 || argint(2, &prot) < 0 ||
+      argint(3, &flags) < 0 || argint(4, &fd) < 0) {
+      return -1;
+  }
+
+  f = p->ofile[fd];
+  if (!f) return -1;
+
+  // Find a free VMA slot
+  for (int i = 0; i < MAX_VMAS; i++) {
+      if (p->vmas[i].addr == 0) {
+          uint64 vaddr = PGROUNDUP(p->sz);  // Allocate at the end of process memory
+          p->sz += length;
+
+          p->vmas[i].addr = vaddr;
+          p->vmas[i].length = length;
+          p->vmas[i].prot = prot;
+          p->vmas[i].flags = flags;
+          p->vmas[i].f = filedup(f);  // Increase reference count
+
+          return vaddr;
+      }
+  }
+  return -1;
 }
 
-uint64
-sys_munmap(void) {
-    uint64 addr;
-    int length;
-    if (argaddr(0, &addr) < 0 || argint(1, &length) < 0) {
-        return -1;
-    }
-    return proc_munmap(myproc(), addr, length);
+uint64 sys_munmap(void) {
+  struct proc *p = myproc();
+  uint64 addr;
+  int length;
+
+  if (argaddr(0, &addr) < 0 || argint(1, &length) < 0) {
+      return -1;
+  }
+
+  for (int i = 0; i < MAX_VMAS; i++) {
+      struct vma *v = &p->vmas[i];
+      if (v->addr <= addr && addr < v->addr + v->length) {
+          int unmap_length = min(length, v->length - (addr - v->addr));
+
+          if (v->flags & MAP_SHARED) {
+              filewrite(v->f, addr, unmap_length);
+          }
+
+          uvmunmap(p->pagetable, addr, unmap_length / PGSIZE, 1);
+
+          if (addr == v->addr) {
+              v->addr += unmap_length;
+              v->length -= unmap_length;
+          } else {
+              v->length -= unmap_length;
+          }
+
+          if (v->length == 0) {
+              fileclose(v->f);
+              memset(v, 0, sizeof(struct vma));
+          }
+
+          return 0;
+      }
+  }
+  return -1;
 }
