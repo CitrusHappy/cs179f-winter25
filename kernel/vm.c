@@ -163,7 +163,7 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
   for(;;){
     if((pte = walk(pagetable, a, 1)) == 0)
       return -1;
-    if(*pte & PTE_V)
+    if(*pte & PTE_V) // mapping already exists, do not override
       panic("remap");
     *pte = PA2PTE(pa) | perm | PTE_V;
     if(a == last)
@@ -187,11 +187,16 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 size, int do_free)
   a = PGROUNDDOWN(va);
   last = PGROUNDDOWN(va + size - 1);
   for(;;){
-    if((pte = walk(pagetable, a, 0)) == 0)
+    if((pte = walk(pagetable, a, 0)) == 0) // pte does not exist in pagetable (something went wrong with page table creation or address is wrong)
       panic("uvmunmap: walk");
-    if((*pte & PTE_V) == 0){
+    if((*pte & PTE_V) == 0){ // uvmunmap: not mapped
       printf("va=%p pte=%p\n", a, *pte);
-      panic("uvmunmap: not mapped");
+      *pte = 0;
+      if(a == last)
+        break;
+      a += PGSIZE;
+      pa += PGSIZE;
+      continue;
     }
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
@@ -327,8 +332,8 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
       panic("uvmcopy: pte should exist");
-    if((*pte & PTE_V) == 0)
-      panic("uvmcopy: page not present");
+    if((*pte & PTE_V) == 0) // uvmcopy: page not present
+      continue;
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
     if((mem = kalloc()) == 0)

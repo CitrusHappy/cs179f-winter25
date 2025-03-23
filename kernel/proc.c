@@ -284,20 +284,21 @@ fork(void)
 
   np->state = RUNNABLE;
 
-  release(&np->lock);
-
   // LAB5
   // ensure that the child has the same mapped regions as the parent
   for (int i = 0; i < MAX_VMAS; i++) {
     // if vma is empty    
     if (p->vmas[i].length) {
         // set vmas to parent's vmas
-        np->vmas[i] = p->vmas[i];
+        memmove(&np->vmas[i], &p->vmas[i], sizeof(p->vmas[i]));
+        //np->vmas[i] = p->vmas[i];
 
         // increment vma's struct file
         filedup(p->vmas[i].file);
     }
   }
+
+  release(&np->lock);
 
   return pid;
 }
@@ -387,8 +388,6 @@ exit(int status)
   p->xstate = status;
   p->state = ZOMBIE;
 
-  release(&original_parent->lock);
-
   // LAB5
   // removes all mapped memory regions for a process
   for(int i = 0; i<MAX_VMAS; ++i) {
@@ -399,6 +398,8 @@ exit(int status)
         p->vmas[i].length = 0;
     }
   }
+
+  release(&original_parent->lock);
 
   // Jump into the scheduler, never to return.
   sched();
