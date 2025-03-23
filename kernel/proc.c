@@ -8,6 +8,7 @@
 #include "file.h"
 #include "proc.h"
 #include "defs.h"
+#include "fcntl.h"
 
 struct cpu cpus[NCPU];
 
@@ -286,10 +287,15 @@ fork(void)
   release(&np->lock);
 
   // LAB5
+  // ensure that the child has the same mapped regions as the parent
   for (int i = 0; i < MAX_VMAS; i++) {
-    np->vmas[i] = p->vmas[i];
-    if (p->vmas[i].addr) {
-        filedup(p->vmas[i].f);
+    // if vma is empty    
+    if (p->vmas[i].length) {
+        // set vmas to parent's vmas
+        np->vmas[i] = p->vmas[i];
+
+        // increment vma's struct file
+        filedup(p->vmas[i].file);
     }
   }
 
@@ -382,6 +388,17 @@ exit(int status)
   p->state = ZOMBIE;
 
   release(&original_parent->lock);
+
+  // LAB5
+  // removes all mapped memory regions for a process
+  for(int i = 0; i<MAX_VMAS; ++i) {
+    if(p->vmas[i].length) {
+        if(p->vmas[i].flags == MAP_SHARED)
+            filewrite(p->vmas[i].file, p->vmas[i].addr, p->vmas[i].length);
+        uvmunmap(p->pagetable, p->vmas[i].addr, p->vmas[i].length/PGSIZE, 1);
+        p->vmas[i].length = 0;
+    }
+  }
 
   // Jump into the scheduler, never to return.
   sched();
