@@ -22,3 +22,5 @@ xv6.out*
 .vagrant/
 submissions/
 diff.txt
+.vscode/
+/changes.diff
