@@ -1,5 +1,3 @@
-#define MAX_VMAS 16
-
 // Saved registers for kernel context switches.
 struct context {
   uint64 ra;
@@ -23,7 +21,7 @@ struct context {
 // Per-CPU state.
 struct cpu {
   struct proc *proc;          // The process running on this cpu, or null.
-  struct context scheduler;   // swtch() here to enter scheduler().
+  struct context context;     // swtch() here to enter scheduler().
   int noff;                   // Depth of push_off() nesting.
   int intena;                 // Were interrupts enabled before push_off()?
 };
@@ -84,13 +82,16 @@ struct trapframe {
 
 enum procstate { UNUSED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
-struct vma {
+// mmap lab specific
+// virtual memory area, recording the address, length, 
+// permissions, file, etc. for a virtual memory range created by mmap.
+struct vma{
+  int valid;
   uint64 addr;
-  uint64 length;
+  int length;
   int prot;
   int flags;
-  int valid;
-  struct file *file;
+  struct file *mapfile;
 };
 
 // Per-process state
@@ -108,12 +109,12 @@ struct proc {
   // these are private to the process, so p->lock need not be held.
   uint64 kstack;               // Virtual address of kernel stack
   uint64 sz;                   // Size of process memory (bytes)
-  pagetable_t pagetable;       // Page table
-  struct trapframe *tf;        // data page for trampoline.S
+  pagetable_t pagetable;       // User page table
+  struct trapframe *trapframe; // data page for trampoline.S
   struct context context;      // swtch() here to run process
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
-
-  struct vma vmas[MAX_VMAS];
+  // mmap lab 
+  struct vma vmas[NVMA];               // Process virtual memory area
 };

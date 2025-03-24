@@ -27,22 +27,17 @@
 
 //
 // send one character to the uart.
+// called by printf, and to echo input characters,
+// but not from write().
 //
 void
 consputc(int c)
 {
-  extern volatile int panicked; // from printf.c
-
-  if(panicked){
-    for(;;)
-      ;
-  }
-
   if(c == BACKSPACE){
     // if the user typed backspace, overwrite with a space.
-    uartputc('\b'); uartputc(' '); uartputc('\b');
+    uartputc_sync('\b'); uartputc_sync(' '); uartputc_sync('\b');
   } else {
-    uartputc(c);
+    uartputc_sync(c);
   }
 }
 
@@ -61,20 +56,18 @@ struct {
 // user write()s to the console go here.
 //
 int
-consolewrite(struct file *f, int user_src, uint64 src, int n)
+consolewrite(int user_src, uint64 src, int n)
 {
   int i;
 
-  acquire(&cons.lock);
   for(i = 0; i < n; i++){
     char c;
     if(either_copyin(&c, user_src, src+i, 1) == -1)
       break;
-    consputc(c);
+    uartputc(c);
   }
-  release(&cons.lock);
 
-  return n;
+  return i;
 }
 
 //
@@ -84,7 +77,7 @@ consolewrite(struct file *f, int user_src, uint64 src, int n)
 // or kernel address.
 //
 int
-consoleread(struct file *f, int user_dst, uint64 dst, int n)
+consoleread(int user_dst, uint64 dst, int n)
 {
   uint target;
   int c;
