@@ -517,34 +517,38 @@ uint64 sys_mmap(void) {
 */
 
 // LAB5
-uint64 sys_mmap(void) {
-  uint64 addr, length, offset;
-  int prot, flags, fd;
-  struct file *file;
-  struct proc *p = myproc();
-
-  if(argaddr(0, &addr) || argaddr(1, &length) || argint(2, &prot)
-  || argint(3, &flags) || argfd(4, &fd, &file) || argaddr(5, &offset))
-      return -1;
-
-  if(!file->writable)
-      if(flags==MAP_SHARED && (prot&PROT_WRITE))
-          return -1;
-
-  for(int i = 0; i<MAX_VMAS; ++i) {
-      if(!p->vmas[i].length) {
-          p->vmas[i].addr = p->sz;
-          p->vmas[i].length = length;
-          p->vmas[i].prot  = prot;
-          p->vmas[i].flags = flags;
-          p->vmas[i].file = filedup(file);
-          p->sz += length;
-
-          return p->vmas[i].addr;
-      }
+uint64
+sys_mmap(void)
+{
+  uint64 addr;
+  int length, prot, flags, fd, i;
+  struct proc* p;
+  if (argint(1, &length) < 0 || argint(2, &prot) < 0 ||
+      argint(3, &flags) < 0 || argint(4, &fd) < 0)
+    return -1;
+  p = myproc();
+  struct file *file = p->ofile[fd];
+  if ((!file->writable)&&(prot&PROT_WRITE)&&(!(flags&MAP_PRIVATE)))
+    return -1;
+  for (i = 0; i < MAX_VMAS; i++) {
+    // allocate vma struct
+    if (p->vmas[i].valid == 0) {
+      p->vmas[i].valid = 1;
+      p->vmas[i].addr = addr = p->sz;
+      p->vmas[i].length = length;
+      p->vmas[i].prot = prot;
+      p->vmas[i].flags = flags;
+      p->vmas[i].file = file;
+      filedup(p->ofile[fd]);
+      break;
+    }
   }
-
-  panic("no free VMA");
+  // have no vma slot
+  if (i == MAX_VMAS) {
+    return -1;
+  }
+  p->sz += length; // lazy mapping
+  return addr;
 }
 
 /*
@@ -588,26 +592,50 @@ uint64 sys_munmap(void) {
 */
 
 // LAB5
-uint64 sys_munmap(void) {
-  struct proc *p = myproc();
-  uint64 addr, length;
-  
-  if(argaddr(0, &addr) || argaddr(1, &length))
-      return -1;
-  
-  for(int i = 0; i<MAX_VMAS; ++i) {
-      if(p->vmas[i].addr == addr) {
-          p->vmas[i].addr += length;
-          p->vmas[i].length -= length;
-          if(p->vmas[i].flags == MAP_SHARED)
-              filewrite(p->vmas[i].file, addr, length);
-          uvmunmap(p->pagetable, addr, length/PGSIZE, 1);
-          if(!p->vmas[i].length)
-              fileclose(p->vmas[i].file);
-          return 0;
-      }
+uint64
+sys_munmap(void)
+{
+  uint64 addr;
+  int length, i;
+  struct proc* p;
+  if (argaddr(0, &addr) < 0 || argint(1, &length) < 0)
+    return -1;
+  p = myproc();
+  for (i = 0; i < MAX_VMAS; i++) {
+    if (p->vmas[i].valid == 1) {
+      if (p->vmas[i].addr <= addr && (p->vmas[i].addr + p->vmas[i].length) > addr)
+            break;
+    }
   }
-  
-  return -1;
+
+  // have no vma slot
+  if (i == MAX_VMAS) {
+    return -1;
+  }
+
+  struct vma *vmap = &p->vmas[i];
+  if (vmap->flags & MAP_SHARED) { 
+    filewrite(vmap->file, addr, length);
+  }
+
+  // printf("addr, length = %d, %d\n", addr, length);
+  // printf("vmap->addr, vmap->length = %d, %d\n", vmap->addr, vmap->length);
+  if (vmap->addr == addr && vmap->length == length) {
+    // unmap the whole vma
+    uvmunmap(p->pagetable, addr, length/PGSIZE, 1);
+    fileclose(vmap->file);
+    vmap->valid = 0;
+  } else if (vmap->addr == addr) {
+    // unmap from the beginning
+    uvmunmap(p->pagetable, addr, length/PGSIZE, 1);
+    vmap->addr += length;
+    vmap->length -= length;
+  } else if (vmap->addr + vmap->length == addr + length){
+    // unmap from the end
+    uvmunmap(p->pagetable, addr, length/PGSIZE, 1);
+    vmap->length -= length;
+  }
+
+  return 0;
 }
   

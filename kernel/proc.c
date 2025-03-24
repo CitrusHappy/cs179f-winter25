@@ -256,6 +256,36 @@ fork(void)
     return -1;
   }
 
+  // LAB5
+  // ensure that the child has the same mapped regions as the parent
+  for (int i = 0; i < MAX_VMAS; i++) {
+    if (p->vmas[i].valid) {
+      np->vmas[i].valid = 1;
+      np->vmas[i].addr = p->vmas[i].addr;
+      np->vmas[i].length = p->vmas[i].length;
+      np->vmas[i].prot = p->vmas[i].prot;
+      np->vmas[i].flags = p->vmas[i].flags;
+      np->vmas[i].file = p->vmas[i].file;
+      filedup(np->vmas[i].file);
+    }
+  }
+
+  /*
+  // LAB5
+  // ensure that the child has the same mapped regions as the parent
+  for (int i = 0; i < MAX_VMAS; i++) {
+    // if vma is empty    
+    if (p->vmas[i].length) {
+        // set vmas to parent's vmas
+        memmove(&np->vmas[i], &p->vmas[i], sizeof(p->vmas[i]));
+        //np->vmas[i] = p->vmas[i];
+
+        // increment vma's struct file
+        filedup(p->vmas[i].file);
+    }
+  }
+    */
+
   // Copy user memory from parent to child.
   if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){
     freeproc(np);
@@ -283,20 +313,6 @@ fork(void)
   pid = np->pid;
 
   np->state = RUNNABLE;
-
-  // LAB5
-  // ensure that the child has the same mapped regions as the parent
-  for (int i = 0; i < MAX_VMAS; i++) {
-    // if vma is empty    
-    if (p->vmas[i].length) {
-        // set vmas to parent's vmas
-        memmove(&np->vmas[i], &p->vmas[i], sizeof(p->vmas[i]));
-        //np->vmas[i] = p->vmas[i];
-
-        // increment vma's struct file
-        filedup(p->vmas[i].file);
-    }
-  }
 
   release(&np->lock);
 
@@ -339,6 +355,17 @@ exit(int status)
 
   if(p == initproc)
     panic("init exiting");
+
+  // LAB5
+  // removes all mapped memory regions for a process
+  for(int i = 0; i<MAX_VMAS; ++i) {
+    if(p->vmas[i].valid) {
+        if(p->vmas[i].flags & MAP_SHARED)
+            filewrite(p->vmas[i].file, p->vmas[i].addr, p->vmas[i].length);
+        uvmunmap(p->pagetable, p->vmas[i].addr, p->vmas[i].length/PGSIZE, 1);
+        filedup(p->vmas[i].file); // increment file ref count
+    }
+  }
 
   // Close all open files.
   for(int fd = 0; fd < NOFILE; fd++){
@@ -387,17 +414,6 @@ exit(int status)
 
   p->xstate = status;
   p->state = ZOMBIE;
-
-  // LAB5
-  // removes all mapped memory regions for a process
-  for(int i = 0; i<MAX_VMAS; ++i) {
-    if(p->vmas[i].length) {
-        if(p->vmas[i].flags == MAP_SHARED)
-            filewrite(p->vmas[i].file, p->vmas[i].addr, p->vmas[i].length);
-        uvmunmap(p->pagetable, p->vmas[i].addr, p->vmas[i].length/PGSIZE, 1);
-        p->vmas[i].length = 0;
-    }
-  }
 
   release(&original_parent->lock);
 

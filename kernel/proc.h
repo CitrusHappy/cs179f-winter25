@@ -89,6 +89,7 @@ struct vma {
   uint64 length;
   int prot;
   int flags;
+  int valid;
   struct file *file;
 };
 
