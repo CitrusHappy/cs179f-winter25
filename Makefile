@@ -29,8 +29,6 @@ OBJS = \
   $K/kernelvec.o \
   $K/plic.o \
   $K/virtio_disk.o \
-  $K/buddy.o \
-  $K/list.o
 
 # riscv64-unknown-elf- or riscv64-linux-gnu-
 # perhaps in /opt/riscv/bin
@@ -139,8 +137,6 @@ UPROGS=\
 	$U/_uthread\
 	$U/_call\
 	$U/_testsh\
-	$U/_kalloctest\
-	$U/_bcachetest\
 	$U/_alloctest\
 	$U/_bigfile\
 	$U/_mmaptest\
