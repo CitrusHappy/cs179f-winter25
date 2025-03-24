@@ -81,13 +81,11 @@ usertrap(void)
   {
     uint64 va = r_stval();
 
-    /*if (va >= p->sz || va < p->trapframe->sp) {
+    if (va >= p->sz || va < p->tf->sp) {
       // page-faults on a virtual memory address higher than any allocated with sbrk()
       // or lower than the stack. In xv6, heap is higher than stack
       p->killed = 1;
-    }else {
-    */
-   
+    } else {
       int i;
       // check if the pagefault page is in one virtual memory area
       for (i = 0; i < MAX_VMAS; i++) {
@@ -110,21 +108,25 @@ usertrap(void)
           // printf("addr : %d\n", p->vmas[i].addr);
           memset((void *)ka, 0, PGSIZE);
           va = PGROUNDDOWN(va);
+
           ilock(p->vmas[i].file->ip);
           readi(p->vmas[i].file->ip, 0, ka, va - p->vmas[i].addr, PGSIZE);
           iunlock(p->vmas[i].file->ip);
-          uint64 pm = PTE_U;
+
+          uint64 flags = PTE_U;
+
           if (p->vmas[i].prot & PROT_READ)
-            pm |= PTE_R;
+            flags |= PTE_R;
           if (p->vmas[i].prot & PROT_WRITE)
-            pm |= PTE_W;
-          if(mappages(p->pagetable, va, PGSIZE, ka, pm) != 0) {
+            flags |= PTE_W;
+            
+          if(mappages(p->pagetable, va, PGSIZE, ka, flags) != 0) {
             kfree((void *)ka);
             p->killed = 1;
           }
         }
       }
-//    }
+    }
   }
   else {
     printf("usertrap(): unexpected scause %p (%s) pid=%d\n", r_scause(), scause_desc(r_scause()), p->pid);

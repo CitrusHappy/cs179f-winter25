@@ -109,6 +109,12 @@ allocproc(void)
 found:
   p->pid = allocpid();
 
+  // LAB5
+  // init vmas
+  for (int i = 0; i < MAX_VMAS; i++) {
+    p->vmas[i].valid = 0;
+  }
+
   // Allocate a trapframe page.
   if((p->tf = (struct trapframe *)kalloc()) == 0){
     release(&p->lock);
